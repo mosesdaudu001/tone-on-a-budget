@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tone on a Budget — listen</title>
+<style>
+  :root { --navy:#10263b; --green:#0e7c5a; --bg:#f7faf9; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+         color:#16252e; background:var(--bg); line-height:1.5; }
+  header { background:var(--navy); color:#fff; padding:22px 18px; }
+  header h1 { margin:0 0 4px; font-size:1.5rem; }
+  header p { margin:0; opacity:.85; font-size:.95rem; }
+  main { max-width:760px; margin:0 auto; padding:18px; }
+  .lead { font-size:1.05rem; }
+  .pair { background:#fff; border:1px solid #e2ece8; border-radius:12px; padding:16px; margin:14px 0;
+          box-shadow:0 1px 3px rgba(0,0,0,.04); }
+  .pair h2 { margin:0 0 2px; font-size:1.15rem; }
+  .gloss { color:#516; font-size:.92rem; margin:0 0 12px; }
+  .ab { display:flex; flex-wrap:wrap; gap:14px; }
+  .ab > div { flex:1 1 280px; }
+  .tag { font-weight:600; font-size:.85rem; color:var(--green); margin-bottom:4px; }
+  .tag.zs { color:#8a6d3b; }
+  audio { width:100%; }
+  .yor { font-weight:700; }
+  .hi { background:#eef7f3; }
+  .note { font-size:.9rem; color:#5a6b73; }
+  footer { max-width:760px; margin:0 auto; padding:18px; font-size:.85rem; color:#5a6b73; }
+  a { color:var(--green); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Tone on a Budget — hear what CER misses</h1>
+  <p>Yor&ugrave;b&aacute; lexical tone in massively-multilingual TTS · Deep Learning Indaba 2026 (RIAD)</p>
+</header>
+<main>
+  <p class="lead">Yor&ugrave;b&aacute; tone changes <b>words</b>, not just melody:
+  <span class="yor">ọkọ</span> (husband) &ne; <span class="yor">ọkọ̀</span> (vehicle) &ne;
+  <span class="yor">ọkọ́</span> (hoe). A synthesiser can be perfectly intelligible (low CER) yet say
+  the <b>wrong word</b> by mis-tuning pitch. Listen for yourself.</p>
+
+  <div class="pair">
+    <h2><span class="yor">ọkọ́</span> — &ldquo;hoe&rdquo; (High tone)</h2>
+    <p class="gloss">Carrier: <i>Mo r&iacute; ọkọ́ n&iacute; ọj&agrave;</i> — &ldquo;I saw a hoe at the market.&rdquo;</p>
+    <div class="ab">
+      <div><div class="tag zs">Zero-shot OmniVoice</div><audio controls preload="none" src="audio/zs_hoe.wav"></audio></div>
+      <div><div class="tag">Finetuned (a few hours)</div><audio controls preload="none" src="audio/ft_hoe.wav"></audio></div>
+    </div>
+  </div>
+
+  <div class="pair">
+    <h2><span class="yor">ọkọ̀</span> — &ldquo;vehicle&rdquo; (Low tone)</h2>
+    <p class="gloss">Carrier: <i>Mo r&iacute; ọkọ̀ n&iacute; ọj&agrave;</i> — &ldquo;I saw a vehicle at the market.&rdquo;</p>
+    <div class="ab">
+      <div><div class="tag zs">Zero-shot OmniVoice</div><audio controls preload="none" src="audio/zs_vehicle.wav"></audio></div>
+      <div><div class="tag">Finetuned (a few hours)</div><audio controls preload="none" src="audio/ft_vehicle.wav"></audio></div>
+    </div>
+  </div>
+
+  <div class="pair hi">
+    <h2>Why CER is blind to this</h2>
+    <p class="gloss">The same finetuned clip, with its <b>pitch flattened</b> (PSOLA). The
+    <b>words are unchanged</b> — an ASR still transcribes it correctly, so <b>CER barely moves</b> —
+    but the <b>tone is destroyed</b>, so the meaning is wrong. Our reference-free metric
+    (<code>tone_i2</code>) catches exactly this; CER cannot.</p>
+    <div class="ab">
+      <div><div class="tag">Finetuned (correct tone)</div><audio controls preload="none" src="audio/ft_vehicle.wav"></audio></div>
+      <div><div class="tag zs">Pitch-flattened (words intact, tone gone)</div><audio controls preload="none" src="audio/ft_vehicle_flat.wav"></audio></div>
+    </div>
+  </div>
+
+  <p class="note">If the players are empty, the audio hasn't been added yet — run
+  <code>notebooks/12_audio_ab_demo.ipynb</code> and drop the clips into <code>docs/audio/</code>.</p>
+</main>
+<footer>
+  Code, the reference-free <code>tone_i2</code> metric, checkpoints &amp; notebooks:
+  <a href="https://github.com/mosesdaudu001/tone-on-a-budget">github.com/mosesdaudu001/tone-on-a-budget</a>
+  &nbsp;·&nbsp; Moses Daudu, ML Collective.
+</footer>
+</body>
+</html>
