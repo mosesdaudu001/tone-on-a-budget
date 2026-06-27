@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+# runtime artifacts (see assets/README.md) — keep weights/calibration out of git
+assets/*.pt
+assets/*.json
+*.wav
+.DS_Store
+
+# private: S3->HF uploader stays out of the public repo
+notebooks/10_upload_artifacts_to_hf.ipynb

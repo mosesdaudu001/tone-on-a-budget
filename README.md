@@ -1,0 +1,127 @@
+# Tone on a Budget
+
+**A reference-free lexical-tone metric for TTS, and how little data installs tone in a
+massively-multilingual model — a Yorùbá case study.**
+
+Companion code for the Deep Learning Indaba 2026 (RIAD) poster of the same name.
+
+- **`tone_metric/`** — the reference-free tone-fidelity toolkit (`tone_i2`): an F0-absolute
+  tone meter (I2), an AfriHuBERT tone probe (I1), and a PSOLA pitch-flattening oracle that
+  proves the meter is pitch-sensitive (and that CER is tone-blind). This is the headline
+  contribution and the part you can run on **any** audio + transcript.
+- **`notebooks/`** — the OmniVoice finetune + evaluation recipe that produces the poster's
+  numbers (data-efficiency sweep, error bars, the "CER is tone-blind" demonstration, and the
+  Swahili generalization run).
+
+## Why a new metric?
+
+Yorùbá has three contrastive tones (High / Mid / Low) that change **words**, not just melody
+— `ọkọ` (husband) ≠ `ọkọ̀` (vehicle) ≠ `ọkọ́` (hoe). A synthesiser can be perfectly
+intelligible (low **CER**) yet say the *wrong word* by mis-tuning pitch. CER cannot see this.
+`tone_i2` scores tone **directly from F0**, with **no parallel ground-truth recording** of the
+test sentence — so it can grade free generations.
+
+`tone_i2` ∈ [0.333 (chance) .. 1.0], higher = better; native Yorùbá speech sits ≈ 0.58.
+
+## The reference-free metric (`tone_metric/`)
+
+| File | Role |
+|---|---|
+| `tone_f0_abs.py` | **I2** — F0-absolute H/M/L tone meter (the decisive `tone_i2` signal) |
+| `tone_probe.py` | **I1** — AfriHuBERT tone probe (quality / anti-collapse) |
+| `tone_oracle.py` | **PSOLA oracle** — flattens pitch while keeping words; verifies I2 is pitch-sensitive and CER is not |
+| `tone_layer0.py`, `tone_gate.py` | two-instrument gate (I1 + I2) with calibrated decision logic |
+| `tone_eval.py`, `tone_eval_v2.py` | syllable/tone-bearing-unit alignment + F0 helpers |
+| `grpo_reward.py` | convenience wrapper for CER (MMS ASR) + SSIM (ECAPA) + length ratio |
+| `test_*.py` | unit tests for every module |
+
+### Install
+
+```bash
+# from the repo (works today, no PyPI needed):
+pip install "git+https://github.com/mosesdaudu001/tone-on-a-budget.git"
+
+# once published to PyPI:
+pip install tone-metric
+
+# torch-backed extras (only needed for the I1 probe / reward models):
+pip install "tone-metric[probe]"     # I1 AfriHuBERT tone probe
+pip install "tone-metric[reward]"    # CER (MMS) + SSIM (ECAPA)
+pip install "tone-metric[full]"      # everything
+```
+
+`import tone_metric` is dependency-light — the torch extras are imported lazily, only when you
+touch `probe_score` / `RewardModels`.
+
+### Use
+
+```python
+from tone_metric import f0_abs_score          # the tone_i2 metric (I2)
+r = f0_abs_score(wav, sr, text)               # returns a dict — read accuracy WITH coverage
+print(r["accuracy"], r["coverage"])           # tone_i2 in [0.333 .. 1.0]; accuracy is NaN if coverage == 0
+#   pass asr=/proc= (an MMS-yor CTC model) for forced alignment; omit for proportional windows
+
+from tone_metric import psola_flatten, tone_transition_score   # oracle + transition variant
+from tone_metric import probe_score, load_probe                # I1 probe (needs the [probe] extra)
+from tone_metric.tone_gate import tone_gate                    # two-instrument gate (I1 + I2)
+from tone_metric.tone_layer0 import layer0_gate
+```
+
+For a runnable end-to-end example, see **`notebooks/11_quickstart_tone_metric.ipynb`**.
+
+**Quickstart on a real clip:** `notebooks/11_quickstart_tone_metric.ipynb` installs the package and
+scores one audio clip + its tone-marked transcript, then flattens the pitch (PSOLA) to show `tone_i2`
+drop while the words are unchanged — a 2-minute, CPU-only functional test (plays both clips inline).
+
+Run the tests:
+
+```bash
+pip install "tone-metric[test]" && python -m pytest -q   # or:  cd tone_metric && python -m pytest -q
+```
+
+### Runtime assets (Hugging Face)
+
+A few non-code artifacts are needed at runtime and are **not** committed here (model weights /
+calibration). They are published as a dataset repo — **`mosesdaudu/tone-on-a-budget-assets`**:
+
+- `f0_abs_calibration.v1.json` — I2 speaker-normalised decision boundaries
+- `probe/tone_probe_*` — trained AfriHuBERT probe weights (I1)
+- `holdouts.v1.json` — held-out Yorùbá evaluation texts
+
+`notebooks/10_upload_artifacts_to_hf.ipynb` mirrors them (and the checkpoints) from S3 to the Hub;
+see `assets/README.md` for the S3 sources.
+
+## Checkpoints
+
+The finetuned OmniVoice models (one per data budget) are on the Hugging Face Hub:
+
+| Language | Budget | Repo |
+|---|---|---|
+| Yorùbá | 15 h (**headline**, native-level tone) | `mosesdaudu/omnivoice-yoruba-15h` |
+| Yorùbá | 1 h / 5 h / 28.5 h (full) | `mosesdaudu/omnivoice-yoruba-{1h,5h,full}` |
+| Swahili | 1 h / 2.5 h / 5 h | `mosesdaudu/omnivoice-swahili-{1h,2p5h,5h}` |
+
+> These are derivatives of **OmniVoice** (k2-fsa, Apache-2.0). At inference they load the
+> **Higgs-Audio-v2 codec** separately, which carries the **Boson Higgs Audio 2 Community
+> License** (a non-commercial, output-restriction clause). The checkpoints here contain only
+> the Apache-2.0-derived OmniVoice weights; you obtain the codec from its own source.
+
+## Reproducing the poster
+
+`notebooks/` runs top-to-bottom on Colab (T4/L4 for eval, a single A100 for the finetune):
+`01` zero-shot probe → `03` finetune → `04` verify → `05` data-efficiency sweep →
+`06` CER-is-tone-blind → `07` error bars → `08`/`09` Swahili. Each notebook `pip install`s the
+`tone-metric` package (no manual clone). Training **data** lives on a private bucket; the notebooks
+document the exact recipe and the checkpoints above let you reproduce the evaluation.
+
+## License & citation
+
+Code in this repo: see `LICENSE`. The metric, recipe and findings are released for research
+use. If you use them, please cite the poster:
+
+> Moses Daudu. *Tone on a Budget: How Little Data Installs Lexical Tone in
+> Massively-Multilingual TTS, and a Reference-Free Metric to Measure It — a Yorùbá Case
+> Study.* Deep Learning Indaba 2026, Research in Africa Showcase (RIAD).
+
+Built on [OmniVoice](https://github.com/k2-fsa/OmniVoice) (k2-fsa). AfriHuBERT, MMS (ASR),
+and ECAPA-TDNN (speaker similarity) are used as evaluation models.

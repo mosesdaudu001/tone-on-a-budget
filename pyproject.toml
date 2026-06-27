@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tone-metric"
+version = "0.1.0"
+description = "Reference-free lexical-tone fidelity metric (tone_i2) for TTS — F0-absolute meter, PSOLA oracle, and AfriHuBERT tone probe."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Moses Daudu" }]
+keywords = ["tone", "tts", "speech", "yoruba", "evaluation", "f0", "prosody", "african-languages"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+# Core: the tone_i2 metric + PSOLA oracle run on these alone (no torch).
+dependencies = [
+  "numpy",
+  "scipy",
+  "librosa",
+  "soundfile",
+  "praat-parselmouth",   # PSOLA pitch-flattening oracle
+  "pyworld",             # F0 backend
+]
+
+[project.optional-dependencies]
+# I1 AfriHuBERT tone probe + ASR forced alignment
+probe  = ["torch", "transformers"]
+# CER (MMS ASR) + SSIM (ECAPA) reward models
+reward = ["torch", "transformers", "speechbrain"]
+full   = ["torch", "transformers", "speechbrain", "swift-f0"]
+test   = ["pytest"]
+
+[project.urls]
+Homepage   = "https://github.com/mosesdaudu001/tone-on-a-budget"
+Repository = "https://github.com/mosesdaudu001/tone-on-a-budget"
+
+[tool.setuptools]
+packages = ["tone_metric"]
+
+[tool.setuptools.package-data]
+tone_metric = ["*.json"]   # minimal_pairs_draft.json
+
+# Note: the default I2 F0 path uses `swift-f0` (imported lazily). If `pip install tone-metric`
+# can't resolve a dependency name on your platform, install it separately, or use the pyworld
+# F0 path. Verify dist names on first `pip install -e .`.

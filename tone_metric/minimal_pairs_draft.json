@@ -1,0 +1,68 @@
+{
+  "_README": [
+    "DRAFT tone minimal-pair sets for the YorTone-MP eval (YORUBA_WAY_FORWARD.md Phase 0d/5).",
+    "STATUS: DRAFT — every entry MUST be verified by a native Yoruba speaker (orthography, tone marks,",
+    "gloss) BEFORE the eval set is frozen. Glosses below are from the linguistics literature's classic",
+    "examples; do not trust them blindly. Target after native expansion: 30-40 contrast sets.",
+    "Protocol: each word is placed in the neutral carriers below; 3 reference voices x 2 seeds per item;",
+    "closed-set forced choice by >=5 fluent listeners; ceiling = real recordings, floor = tone-stripped.",
+    "NO item may appear in any training data (frozen holdout)."
+  ],
+  "carriers": [
+    {"template": "Mo rí ___ ní ọjà.", "gloss": "I saw ___ at the market.", "verified": false},
+    {"template": "Ó sọ ọ̀rọ̀ nípa ___ lánàá.", "gloss": "He/she spoke about ___ yesterday.", "verified": false},
+    {"template": "Ṣé o mọ ___ yìí?", "gloss": "Do you know this ___?", "verified": false}
+  ],
+  "sets": [
+    {
+      "base": "oko",
+      "items": [
+        {"text": "ọkọ", "tones": "M-M", "gloss": "husband", "verified": false},
+        {"text": "ọkọ́", "tones": "M-H", "gloss": "hoe", "verified": false},
+        {"text": "ọkọ̀", "tones": "M-L", "gloss": "vehicle/canoe", "verified": false},
+        {"text": "ọ̀kọ̀", "tones": "L-L", "gloss": "spear", "verified": false},
+        {"text": "oko", "tones": "M-M", "gloss": "farm (undotted o)", "verified": false}
+      ]
+    },
+    {
+      "base": "igba",
+      "items": [
+        {"text": "igba", "tones": "M-M", "gloss": "two hundred", "verified": false},
+        {"text": "igbá", "tones": "M-H", "gloss": "calabash", "verified": false},
+        {"text": "igbà", "tones": "M-L", "gloss": "climbing rope/strap", "verified": false},
+        {"text": "ìgbà", "tones": "L-L", "gloss": "time/season", "verified": false},
+        {"text": "ìgbá", "tones": "L-H", "gloss": "garden egg", "verified": false}
+      ]
+    },
+    {
+      "base": "ogun",
+      "items": [
+        {"text": "ogun", "tones": "M-M", "gloss": "war", "verified": false},
+        {"text": "ogún", "tones": "M-H", "gloss": "twenty; inheritance", "verified": false},
+        {"text": "ògùn", "tones": "L-L", "gloss": "medicine/charm (check vs oògùn)", "verified": false}
+      ]
+    },
+    {
+      "base": "ara",
+      "items": [
+        {"text": "ara", "tones": "M-M", "gloss": "body", "verified": false},
+        {"text": "àrá", "tones": "L-H", "gloss": "thunder", "verified": false}
+      ]
+    },
+    {
+      "base": "owo",
+      "items": [
+        {"text": "owó", "tones": "M-H", "gloss": "money", "verified": false},
+        {"text": "òwò", "tones": "L-L", "gloss": "trade/business", "verified": false},
+        {"text": "ọwọ́", "tones": "M-H", "gloss": "hand (dotted)", "verified": false},
+        {"text": "ọ̀wọ̀", "tones": "L-L", "gloss": "respect (dotted)", "verified": false}
+      ]
+    }
+  ],
+  "_TODO": [
+    "Native speaker: verify/correct every tones+gloss, add ~25 more sets (aim for H/M/L coverage in",
+    "BOTH syllable positions, some 3-syllable sets, and at least 5 sets with dotted vowels).",
+    "Then freeze to S3 (tts_data/yoruba/eval/minimal_pairs.v1.json) and never train on these words",
+    "in these carriers."
+  ]
+}

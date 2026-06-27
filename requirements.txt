@@ -1,0 +1,14 @@
+# Reference-free tone metric (tone_metric/) + evaluation
+numpy
+scipy
+librosa
+soundfile
+praat-parselmouth     # PSOLA oracle (tone_oracle.py)
+pyworld               # F0 extraction (tone_eval*)
+swift-f0              # F0 extraction (tone_eval_v2)
+torch
+transformers          # AfriHuBERT probe (I1), MMS ASR (CER)
+speechbrain           # ECAPA-TDNN speaker similarity (SSIM)
+huggingface_hub
+tqdm
+pytest                # tests
