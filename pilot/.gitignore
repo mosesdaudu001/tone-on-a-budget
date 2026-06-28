@@ -1,8 +1,8 @@
 # Generated at run time — NEVER commit these.
 # keymap.json holds the WITHHELD answer key (source labels + tone_i2 per item); committing it
 # would deanonymise the blind form. pilot_form.html embeds audio; responses are reviewer data.
-keymap.json
-pilot_form.html
+keymap*.json
+*_form.html
 responses*.csv
 stimuli/
 *.wav
