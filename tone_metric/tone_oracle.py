@@ -45,7 +45,8 @@ except ImportError:  # flat-import fallback (legacy notebooks on sys.path)
     import tone_layer0 as L0
 
 SR = 24000
-F0MIN, F0MAX = 65.0, 400.0
+F0MIN, F0MAX = 65.0, 600.0   # f0max raised 400->600 (A/B rebuild §2/§7): a full opposite-band reset on a high
+                             # voice pushes well past 400 Hz; the ceiling MUST bracket it or PSOLA clips the flip.
 
 
 # ----------------------------- parselmouth primitives (lazy import) -----------------------------
@@ -118,6 +119,142 @@ def psola_flatten(wav, sr=SR, f0min=F0MIN, f0max=F0MAX):
     call([manip, ptier], "Replace pitch tier")
     out = call(manip, "Get resynthesis (overlap-add)")
     return np.asarray(out.values).reshape(-1).astype("float32")
+
+
+# ============================================================================================
+# A/B rebuild (PSOLA_RECIPE.md §2/§7): grow the flip window to the WHOLE voiced rhyme and RESET its
+# contour to the opposite tone band (not blind-multiply a CTC sliver). The pure-geometry helpers
+# (voiced_rhyme_window / tone_level_residuals / build_flip_contour / the pts builder) carry NO
+# parselmouth dependency — parselmouth is lazy-imported only inside the resynthesis fns
+# (psola_set_contour / reimpose_contour) so the window/contour logic is unit-testable headless.
+# ============================================================================================
+def voiced_rhyme_window(pre, i, min_ms=60.0):
+    """Grow the FULL voiced rhyme around TBU i from the F0 contour — NOT the ~20-60 ms CTC sliver wins[i]
+    (the root cause of the inaudible flips). Seed = center of wins[i]; expand left/right over CONTIGUOUS
+    non-NaN pre['f0'] frames until F0 goes unvoiced/silent each side; CLAMP so the window never crosses
+    into the nearest aligned neighbour wins[i±1] (no bleed). Returns (t0,t1) seconds, or None if the
+    grown rhyme has < min_ms of voiced speech. Pure numpy — no parselmouth."""
+    import numpy as np
+    wins = pre["wins"]
+    if i < 0 or i >= len(wins) or wins[i] is None:
+        return None
+    f0 = np.asarray(pre["f0"], dtype="float64")
+    times = np.asarray(pre["times"], dtype="float64")
+    if f0.size == 0 or times.size != f0.size:
+        return None
+    w0, w1 = float(wins[i][0]), float(wins[i][1])
+    seed_t = 0.5 * (w0 + w1)
+    # clamp bounds = the nearest ALIGNED neighbour's facing edge (never bleed into a neighbour TBU)
+    left_clamp = float(times[0])
+    for j in range(i - 1, -1, -1):
+        if wins[j] is not None:
+            left_clamp = max(left_clamp, float(wins[j][1]))
+            break
+    right_clamp = float(times[-1]) + 1e-6
+    for j in range(i + 1, len(wins)):
+        if wins[j] is not None:
+            right_clamp = min(right_clamp, float(wins[j][0]))
+            break
+    voiced = ~np.isnan(f0)
+    # seed frame: nearest voiced frame to the window center, preferring INSIDE wins[i]
+    in_win = np.where((times >= w0) & (times < w1) & voiced)[0]
+    if in_win.size:
+        seed = int(in_win[int(np.argmin(np.abs(times[in_win] - seed_t)))])
+    else:
+        cand = np.where(voiced & (times >= left_clamp) & (times < right_clamp))[0]
+        if cand.size == 0:
+            return None
+        seed = int(cand[int(np.argmin(np.abs(times[cand] - seed_t)))])
+    lo = seed
+    while lo - 1 >= 0 and voiced[lo - 1] and times[lo - 1] >= left_clamp:
+        lo -= 1
+    hi = seed
+    while hi + 1 < f0.size and voiced[hi + 1] and times[hi + 1] < right_clamp:
+        hi += 1
+    t0, t1 = float(times[lo]), float(times[hi])
+    if (t1 - t0) * 1000.0 < float(min_ms):
+        return None
+    return (t0, t1)
+
+
+def tone_level_residuals(pre):
+    """(medH, medL, mid_ref, slope) for the CLEAN clip, all in the blind declination-removed residual space
+    the classifier decides in. medH/medL = median residual of H / L TBUs; mid_ref = median over ALL TBUs;
+    slope = the blind Theil-Sen declination (st/s) used to re-add declination when synthesizing a flip.
+    medH/medL/mid_ref are NaN if that group is empty. Pure python (no parselmouth)."""
+    try:
+        from . import tone_f0_abs as f0a
+    except ImportError:  # flat-import fallback (legacy notebooks on sys.path)
+        import tone_f0_abs as f0a
+    sts = v2._tbu_semitones(pre)
+    res, slope = f0a._blind_residuals(sts)
+    tones = pre["tones"]
+    Hs = [r for r, t in zip(res, tones) if r is not None and t == "H"]
+    Ls = [r for r, t in zip(res, tones) if r is not None and t == "L"]
+    allr = [r for r in res if r is not None]
+    medH = _median(Hs) if Hs else float("nan")
+    medL = _median(Ls) if Ls else float("nan")
+    mid_ref = _median(allr) if allr else float("nan")
+    return medH, medL, mid_ref, float(slope)
+
+
+def build_flip_contour(t0, t1, r_target, slope, step=0.01):
+    """Dense [(time_s, hz), ...] across [t0,t1] that RESETS the rhyme to residual r_target, with declination
+    re-added: st_abs(t) = r_target + slope*t ; hz = 100 * 2**(st_abs/12)  (100 Hz ref matches
+    v2._tbu_semitones, so the re-analyzed residual lands back at ~r_target). Pure python."""
+    pts = []
+    if step <= 0:
+        step = 0.01
+    t, end = float(t0), float(t1)
+    while t <= end + 1e-9:
+        st_abs = r_target + slope * t
+        pts.append((t, 100.0 * (2.0 ** (st_abs / 12.0))))
+        t += step
+    return pts
+
+
+def _orig_contour_pts(pre, t0, t1):
+    """[(time_s, hz), ...] = the clip's OWN measured F0 over [t0,t1) voiced frames (the CORRECT-twin contour).
+    Pure numpy — split out from reimpose_contour so it is testable without parselmouth."""
+    import numpy as np
+    f0 = np.asarray(pre["f0"], dtype="float64")
+    times = np.asarray(pre["times"], dtype="float64")
+    # t1-INCLUSIVE so the correct twin's trailing point lands at the SAME time as build_flip_contour's
+    # (which loops while t <= t1) — both twins then carry an identical point grid at the rhyme edges and
+    # differ ONLY in the in-rhyme pitch (PSOLA_RECIPE.md artifact-matching).
+    return [(float(times[k]), float(f0[k])) for k in range(f0.size)
+            if t0 <= times[k] <= t1 and not np.isnan(f0[k])]
+
+
+# ----------------------------- parselmouth resynthesis (lazy import) -----------------------------
+def psola_set_contour(wav, t0, t1, pts, sr=SR, f0min=F0MIN, f0max=F0MAX):
+    """DENSE pitch-tier RESET over [t0,t1): drop the existing pitch points in that range, lay down
+    pts=[(t,hz),...], Replace, PSOLA-resynthesize. Modelled on psola_flatten's remove/add/Replace machinery
+    (vs psola_shift_window's in-place 'Multiply frequencies'): this OVERWRITES the contour instead of scaling
+    it, so the rhyme lands SQUARELY in the target band. Used for BOTH twins (flip = reset to opposite band;
+    correct = reset to original values) so they carry an IDENTICAL resynthesis artifact. parselmouth lazy."""
+    import numpy as np
+    from parselmouth.praat import call
+    manip = call(_snd(wav, sr), "To Manipulation", 0.01, f0min, f0max)
+    ptier = call(manip, "Extract pitch tier")
+    n = int(call(ptier, "Get number of points"))
+    for idx in range(n, 0, -1):                       # high->low so indices stay valid after removal
+        t = call(ptier, "Get time from index", idx)
+        if t0 <= t < t1:
+            call(ptier, "Remove point", idx)
+    for (t, hz) in pts:
+        if hz and hz > 0:
+            call(ptier, "Add point", float(t), float(hz))
+    call([manip, ptier], "Replace pitch tier")
+    out = call(manip, "Get resynthesis (overlap-add)")
+    return np.asarray(out.values).reshape(-1).astype("float32")
+
+
+def reimpose_contour(wav, pre, t0, t1, sr=SR, f0min=F0MIN, f0max=F0MAX):
+    """CORRECT twin: re-impose the clip's OWN measured F0 over the SAME rhyme via the SAME dense-pitch-tier
+    machinery (psola_set_contour) the flipped twin uses — so both twins share the identical artifact and the
+    ONLY perceptible difference is the in-rhyme pitch. parselmouth lazy (inside psola_set_contour)."""
+    return psola_set_contour(wav, t0, t1, _orig_contour_pts(pre, t0, t1), sr=sr, f0min=f0min, f0max=f0max)
 
 
 # ----------------------------- the clip's own H-L spread -----------------------------

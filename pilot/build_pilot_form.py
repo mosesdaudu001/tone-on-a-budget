@@ -377,6 +377,7 @@ def render_html(items_for_js, seed):
     """items_for_js: ordered list of {item_id, text, audio} (audio = data URI). Intro/end text + button labels
     are embedded VERBATIM per the spec. No external/CDN dependency — inline CSS/JS, inline audio."""
     items_json = json.dumps(items_for_js, ensure_ascii=False)
+    items_json = items_json.replace("</", "<\\/")  # escape `</` so a `</script>` in a transcript can't end the inline script
     html = r"""<!DOCTYPE html>
 <html lang="yo">
 <head>
@@ -489,6 +490,177 @@ function next_(){
 function prev(){ if(idx>0){ idx--; render(); } }
 function compact(){
   let parts = ["PILOT1"];
+  for (const it of ITEMS){ if(answers[it.item_id]) parts.push(it.item_id+"="+answers[it.item_id]); }
+  return parts.join(";");
+}
+function csvBlob(){
+  let rows = ["item_id,answer"];
+  for (const it of ITEMS){ rows.push(it.item_id+","+(answers[it.item_id]||"")); }
+  return "data:text/csv;charset=utf-8," + encodeURIComponent(rows.join("\n"));
+}
+function finish(){
+  document.getElementById("task").classList.add("hidden");
+  document.getElementById("done").classList.remove("hidden");
+  document.getElementById("ansbox").textContent = compact();
+  document.getElementById("csv").href = csvBlob();
+}
+function copyAns(){
+  const code = compact();
+  // capture the button synchronously — window.event is gone by the time the async clipboard promise resolves
+  const btn = document.querySelector("#done button.prim");
+  const done = () => { if(btn){ btn.textContent="Copied ✓"; setTimeout(()=>btn.textContent="Copy my answers",1600); } };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(code).then(done).catch(()=>fallbackCopy(code,done));
+  } else { fallbackCopy(code, done); }
+}
+function fallbackCopy(code, done){
+  const t=document.createElement("textarea"); t.value=code;
+  t.contentEditable="true"; t.readOnly=false;
+  t.style.position="fixed"; t.style.top="0"; t.style.left="0"; t.style.opacity="0";
+  document.body.appendChild(t);
+  let ok=false;
+  try {
+    const range=document.createRange(); range.selectNodeContents(t);
+    const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    t.setSelectionRange(0, code.length);
+    ok = document.execCommand("copy");
+  } catch(e){ ok=false; }
+  document.body.removeChild(t);
+  if(ok){ done(); } else { alert("Copy failed — long-press the code box to copy."); }
+}
+</script>
+</body>
+</html>
+"""
+    return html.replace("__ITEMS_JSON__", items_json).replace("__SEED__", str(seed))
+
+
+# ----------------------------------------------------------------------------- A/B HTML (PSOLA rebuild, VERBATIM)
+def render_ab_html(items_for_js, seed):
+    """A/B PAIRED form for the PSOLA rebuild. items_for_js: ordered list of {item_id, text, audioA, audioB}
+    (audioA/audioB = data URIs; the correct side is already randomized at BUILD time per keymap side_map).
+    Each trial shows the intended Yorùbá text + two players A and B + three buttons (A / B / — not sure).
+    Intro/question/end text + labels embedded VERBATIM per the spec. Compact code prefix 'PILOT2', CSV
+    fallback (item_id,answer ∈ {A,B,unsure}), localStorage resume. BLIND — no side_map/condition/tone_i2.
+    No external/CDN dependency. Reuses the pilot's SYNCHRONOUS clipboard-button capture (no window.event bug)."""
+    items_json = json.dumps(items_for_js, ensure_ascii=False)
+    items_json = items_json.replace("</", "<\\/")  # escape `</` so a `</script>` in a transcript can't end the inline script
+    html = r"""<!DOCTYPE html>
+<html lang="yo">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Yorùbá Tone A/B Listening Test</title>
+<style>
+  :root { --pad: 16px; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; font-family: -apple-system, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+         background: #f4f6f8; color: #18202a; line-height: 1.45; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: var(--pad); min-height: 100vh; }
+  .card { background: #fff; border-radius: 16px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+  h1 { font-size: 22px; margin: 0 0 12px; }
+  p.lead { font-size: 17px; }
+  .progress { font-size: 15px; color: #5a6b7b; margin: 4px 0 14px; font-weight: 600; }
+  .stim { font-size: 26px; font-weight: 700; text-align: center; padding: 18px 8px; margin: 6px 0 10px;
+          background: #eef3f8; border-radius: 12px; word-break: break-word; }
+  .qline { font-size: 17px; font-weight: 600; text-align: center; margin: 8px 0 6px; }
+  .abrow { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+  .ablab { font-size: 18px; font-weight: 700; width: 26px; text-align: center; color: #1769e0; }
+  audio { width: 100%; }
+  button { font-size: 18px; font-family: inherit; border: none; border-radius: 14px; padding: 18px;
+           width: 100%; margin: 9px 0; cursor: pointer; font-weight: 600; }
+  .choice { background: #e9eef3; color: #18202a; border: 2px solid transparent; }
+  .choice.sel { border-color: #1769e0; background: #dcebff; }
+  .nav { display: flex; gap: 10px; margin-top: 18px; }
+  .nav button { flex: 1; }
+  .prim { background: #1769e0; color: #fff; }
+  .prim:disabled { background: #aebfce; cursor: not-allowed; }
+  .ghost { background: #e3e8ee; color: #2a3744; }
+  .code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; background: #0e1726;
+          color: #d7e2ef; padding: 14px; border-radius: 10px; word-break: break-all; white-space: pre-wrap; }
+  a.dl { display: inline-block; margin-top: 12px; color: #1769e0; font-weight: 600; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div id="intro" class="card">
+    <h1>Yorùbá Tone A/B 🎧</h1>
+    <p class="lead">You'll hear short Yorùbá clips in PAIRS — version A and version B of the SAME sentence. In one of them the tone is wrong. Listen to both, then tap whichever sounds like correct Yorùbá. About 15–20 minutes. Headphones help but a phone is fine. There are no wrong answers about you.</p>
+    <button class="prim" onclick="start()">Start</button>
+  </div>
+
+  <div id="task" class="card hidden">
+    <div class="progress" id="prog"></div>
+    <div class="stim" id="stim"></div>
+    <div class="qline">Which one sounds like correct Yorùbá?</div>
+    <div class="abrow"><span class="ablab">A</span><audio id="playerA" controls preload="none"></audio></div>
+    <div class="abrow"><span class="ablab">B</span><audio id="playerB" controls preload="none"></audio></div>
+    <button class="choice" id="c_a"  onclick="choose('A')">A is correct</button>
+    <button class="choice" id="c_b"  onclick="choose('B')">B is correct</button>
+    <button class="choice" id="c_un" onclick="choose('unsure')">— Not sure</button>
+    <div class="nav">
+      <button class="ghost" id="back" onclick="prev()">‹ Back</button>
+      <button class="prim"  id="next" onclick="next_()" disabled>Next ›</button>
+    </div>
+  </div>
+
+  <div id="done" class="card hidden">
+    <h1>Done 🙏</h1>
+    <p class="lead">Thank you! Tap "Copy my answers" below, then paste them back to Moses in your chat.</p>
+    <button class="prim" onclick="copyAns()">Copy my answers</button>
+    <div class="code" id="ansbox"></div>
+    <a class="dl" id="csv" href="#" download="psola_answers.csv">Download CSV instead</a>
+  </div>
+
+</div>
+<script>
+const ITEMS = __ITEMS_JSON__;
+const SEED  = __SEED__;
+const LSKEY = "yor_tone_ab_" + SEED;
+let answers = {};
+let idx = 0;
+
+try { answers = JSON.parse(localStorage.getItem(LSKEY)) || {}; } catch(e) { answers = {}; }
+function save(){ try { localStorage.setItem(LSKEY, JSON.stringify(answers)); } catch(e){} }
+
+function start(){
+  document.getElementById("intro").classList.add("hidden");
+  document.getElementById("task").classList.remove("hidden");
+  idx = 0;
+  for (let i=0;i<ITEMS.length;i++){ if(!answers[ITEMS[i].item_id]){ idx=i; break; } if(i===ITEMS.length-1) idx=i; }
+  render();
+}
+function render(){
+  const it = ITEMS[idx];
+  document.getElementById("prog").textContent = (idx+1) + " / " + ITEMS.length;
+  document.getElementById("stim").textContent = it.text;
+  const pa = document.getElementById("playerA"); pa.src = it.audioA; pa.load();
+  const pb = document.getElementById("playerB"); pb.src = it.audioB; pb.load();
+  const cur = answers[it.item_id] || null;
+  for (const [id,val] of [["c_a","A"],["c_b","B"],["c_un","unsure"]]){
+    document.getElementById(id).classList.toggle("sel", cur===val);
+  }
+  document.getElementById("next").disabled = !cur;
+  document.getElementById("back").disabled = (idx===0);
+  document.getElementById("next").textContent = (idx===ITEMS.length-1) ? "Finish" : "Next ›";
+}
+function choose(val){
+  answers[ITEMS[idx].item_id] = val; save();
+  for (const [id,v] of [["c_a","A"],["c_b","B"],["c_un","unsure"]]){
+    document.getElementById(id).classList.toggle("sel", v===val);
+  }
+  document.getElementById("next").disabled = false;
+}
+function next_(){
+  if(!answers[ITEMS[idx].item_id]) return;
+  if(idx===ITEMS.length-1){ finish(); return; }
+  idx++; render();
+}
+function prev(){ if(idx>0){ idx--; render(); } }
+function compact(){
+  let parts = ["PILOT2"];
   for (const it of ITEMS){ if(answers[it.item_id]) parts.push(it.item_id+"="+answers[it.item_id]); }
   return parts.join(";");
 }
