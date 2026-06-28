@@ -294,12 +294,24 @@ def main():
     print(f"raw human/tone_i2 agreement              = {agree*100:.1f}%")
     print(f"Cohen's kappa (secondary, TAU-binarized) = {kappa:.3f}  [95% CI {klo:.3f}, {khi:.3f}]  (conservative; do not headline)")
     print("-" * 64)
-    # preregistered read — decided BEFORE any data (see 2_REVIEWER_instructions.md); do not move it.
+    # preregistered read. CORRECTION (transparent): the original rule was "AUROC >= 0.70 OR anchor-acc >= 75%".
+    # That OR was a SPECIFICATION ERROR — anchor-acc and the catch screen measure whether the LISTENER is
+    # engaged/competent (a rater-validity GATE), NOT whether the METRIC is valid. Metric validity is AUROC
+    # ALONE. Conflating them lets a pilot "pass" on rater engagement while the metric tracks nothing. Corrected:
+    #   GATE (rater valid): catch >= catch_min/6  AND  anchor ✓-acc >= 75%   -> only then is the rater usable.
+    #   SUCCESS (metric):   AUROC >= 0.70 (rater gate must pass first).
+    gate_ok = (aphat >= 0.75)        # catch already enforced upstream (only catch-passing raters reach 'kept')
+    print(f"rater-validity GATE (catch>={args.catch_min}/6 AND anchor ✓-acc>=75%): "
+          f"{'PASS — listener engaged' if gate_ok else 'FAIL — listener not engaged; do not use this rater'}")
     if auc == auc:
-        passed = (auc >= 0.70) or (aphat >= 0.75)
-        verdict = ("PASS — preliminary human evidence the metric tracks perceived tone"
-                   if passed else "INCONCLUSIVE — report honestly as an underpowered pilot")
-        print(f"preregistered read (AUROC >= 0.70 OR anchor-acc >= 75%): {verdict}")
+        if not gate_ok:
+            verdict = "N/A — rater failed the validity gate"
+        elif auc >= 0.70:
+            verdict = "PASS — preliminary human evidence the metric tracks perceived tone"
+        else:
+            verdict = ("INCONCLUSIVE/NEGATIVE — metric did NOT track this listener (AUROC ≈ chance); "
+                       "underpowered (N=1) AND the ✓/✗-on-TTS task confounds tone with synthetic naturalness")
+        print(f"metric-validity READ (AUROC>=0.70, after gate): {verdict}")
     print(f"pilot: N={len(kept)}, {n_scored} items, "
           f"AUROC={auc:.2f} [{aulo:.2f},{auhi:.2f}], "
           f"anchor ✓-acc={aphat*100:.0f}% [{alo*100:.0f}%,{ahi*100:.0f}%]  (kappa={kappa:.2f} secondary)")
