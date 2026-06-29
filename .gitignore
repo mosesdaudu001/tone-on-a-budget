@@ -5,7 +5,19 @@ __pycache__/
 assets/*.pt
 assets/*.json
 *.wav
+# ...except the 5 poster QR "Listen" demo clips, which MUST ship in the repo:
+!docs/audio/zs_hoe.wav
+!docs/audio/ft_hoe.wav
+!docs/audio/zs_vehicle.wav
+!docs/audio/ft_vehicle.wav
+!docs/audio/ft_vehicle_flat.wav
 .DS_Store
 
 # private: S3->HF uploader stays out of the public repo
 notebooks/10_upload_artifacts_to_hf.ipynb
+
+# private: blind-pilot answer keys + reviewer responses must NEVER reach the public repo
+# (committing keymap*.json would deanonymise the listening test)
+keymap*.json
+*answers*.csv
+*responses*.csv
