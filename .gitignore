@@ -21,3 +21,8 @@ notebooks/10_upload_artifacts_to_hf.ipynb
 keymap*.json
 *answers*.csv
 *responses*.csv
+
+# private: contributor voice recordings (native-speaker reference clips) — do NOT publish
+# without explicit consent for publication. Keep raw personal audio out of the public repo.
+*.opus
+*.m4a
